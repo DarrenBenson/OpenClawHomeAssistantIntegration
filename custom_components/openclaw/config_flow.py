@@ -20,11 +20,13 @@ try:
         ConfigFlow,
         ConfigFlowResult,
         OptionsFlow,
+        OptionsFlowWithReload,
     )
 except ImportError:
     from homeassistant.config_entries import ConfigEntry, ConfigFlow, OptionsFlow
 
     ConfigFlowResult = dict[str, Any]
+    OptionsFlowWithReload = OptionsFlow
 from homeassistant.core import HomeAssistant
 from homeassistant.helpers.aiohttp_client import async_get_clientsession
 
@@ -439,7 +441,7 @@ class OpenClawConfigFlow(ConfigFlow, domain=DOMAIN):
         )
 
 
-class OpenClawOptionsFlow(OptionsFlow):
+class OpenClawOptionsFlow(OptionsFlowWithReload):
     """Handle OpenClaw options."""
 
     def __init__(self, config_entry: ConfigEntry) -> None:

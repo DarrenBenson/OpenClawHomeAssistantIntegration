@@ -86,12 +86,7 @@ class OpenClawApiClient:
         self._token = token
 
     def _headers(self, agent_id: str | None = None) -> dict[str, str]:
-        """Build request headers with auth token and agent ID.
-
-        Args:
-            agent_id: Per-call agent ID override. Falls back to the
-                      client-level ``agent_id`` set in the constructor.
-        """
+        """Build request headers with auth token and agent ID."""
         effective_agent = agent_id or self._agent_id or "main"
         return {
             "Authorization": f"Bearer {self._token}",
@@ -201,8 +196,7 @@ class OpenClawApiClient:
             session_id: Optional session/conversation ID.
             model: Optional model override.
             stream: If True, raises ValueError (use async_stream_message).
-            agent_id: Optional per-call agent ID override (overrides the
-                      client-level default set in the constructor).
+            agent_id: Optional per-call agent ID override.
 
         Returns:
             Complete chat completion response.
@@ -270,8 +264,7 @@ class OpenClawApiClient:
             message: The user message text.
             session_id: Optional session/conversation ID.
             model: Optional model override.
-            agent_id: Optional per-call agent ID override (overrides the
-                      client-level default set in the constructor).
+            agent_id: Optional per-call agent ID override.
 
         Yields:
             Content delta strings from the streaming response.

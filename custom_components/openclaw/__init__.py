@@ -140,6 +140,10 @@ async def async_setup_entry(hass: HomeAssistant, entry: OpenClawConfigEntry) -> 
     use_ssl = entry.data.get(CONF_USE_SSL, False)
     verify_ssl = entry.data.get(CONF_VERIFY_SSL, True)
     session = async_get_clientsession(hass, verify_ssl=verify_ssl)
+    agent_id: str = entry.options.get(
+        CONF_AGENT_ID,
+        entry.data.get(CONF_AGENT_ID, DEFAULT_AGENT_ID),
+    )
 
     # agent_id can come from options (user-changeable) or from initial config data
     agent_id: str = entry.options.get(
@@ -395,7 +399,6 @@ def _async_register_services(hass: HomeAssistant) -> None:
         """Handle the openclaw.send_message service call."""
         message: str = call.data[ATTR_MESSAGE]
         session_id: str = call.data.get(ATTR_SESSION_ID) or "default"
-        # Per-call agent_id overrides the client-level default when provided.
         call_agent_id: str | None = call.data.get(ATTR_AGENT_ID)
 
         entry_data = _get_first_entry_data(hass)
