@@ -2,6 +2,12 @@
 
 All notable changes to the OpenClaw Home Assistant Integration will be documented in this file.
 
+## [0.1.59] - 2026-03-07
+
+### Fixed
+- Fixed manual configuration incorrectly forcing `Verify SSL certificate` to remain enabled when the checkbox was unchecked.
+- This restores manual setup for self-signed HTTPS endpoints such as standalone OpenClaw `lan_https` deployments.
+
 ## [0.1.58] - 2026-03-07
 
 ### Added

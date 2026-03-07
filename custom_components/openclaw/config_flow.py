@@ -384,7 +384,7 @@ class OpenClawConfigFlow(ConfigFlow, domain=DOMAIN):
             port = user_input[CONF_GATEWAY_PORT]
             token = user_input[CONF_GATEWAY_TOKEN]
             use_ssl = user_input.get(CONF_USE_SSL, False)
-            verify_ssl = user_input.get(CONF_VERIFY_SSL, True)
+            verify_ssl = user_input.get(CONF_VERIFY_SSL, False)
 
             try:
                 connected = await _async_validate_connection(
