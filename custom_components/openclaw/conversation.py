@@ -22,9 +22,12 @@ from .const import (
     ATTR_MODEL,
     ATTR_SESSION_ID,
     ATTR_TIMESTAMP,
+    CONF_ASSIST_SESSION_ID,
     CONF_CONTEXT_MAX_CHARS,
     CONF_CONTEXT_STRATEGY,
     CONF_INCLUDE_EXPOSED_CONTEXT,
+    CONF_VOICE_AGENT_ID,
+    DEFAULT_ASSIST_SESSION_ID,
     DEFAULT_CONTEXT_MAX_CHARS,
     DEFAULT_CONTEXT_STRATEGY,
     DEFAULT_INCLUDE_EXPOSED_CONTEXT,
@@ -36,6 +39,11 @@ from .coordinator import OpenClawCoordinator
 from .exposure import apply_context_policy, build_exposed_entities_context
 
 _LOGGER = logging.getLogger(__name__)
+
+_VOICE_REQUEST_HEADERS = {
+    "x-openclaw-source": "voice",
+    "x-ha-voice": "true",
+}
 
 
 async def async_setup_entry(
@@ -110,6 +118,9 @@ class OpenClawConversationAgent(conversation.AbstractConversationAgent):
         conversation_id = self._resolve_conversation_id(user_input)
         assistant_id = "conversation"
         options = self.entry.options
+        voice_agent_id = self._normalize_optional_text(
+            options.get(CONF_VOICE_AGENT_ID)
+        )
         include_context = options.get(
             CONF_INCLUDE_EXPOSED_CONTEXT,
             DEFAULT_INCLUDE_EXPOSED_CONTEXT,
@@ -136,6 +147,7 @@ class OpenClawConversationAgent(conversation.AbstractConversationAgent):
                 client,
                 message,
                 conversation_id,
+                voice_agent_id,
                 system_prompt,
             )
         except OpenClawApiError as err:
@@ -151,6 +163,7 @@ class OpenClawConversationAgent(conversation.AbstractConversationAgent):
                             client,
                             message,
                             conversation_id,
+                            voice_agent_id,
                             system_prompt,
                         )
                     except OpenClawApiError as retry_err:
@@ -191,6 +204,15 @@ class OpenClawConversationAgent(conversation.AbstractConversationAgent):
 
     def _resolve_conversation_id(self, user_input: conversation.ConversationInput) -> str:
         """Return conversation id from HA or a stable Assist fallback session key."""
+        configured_session_id = self._normalize_optional_text(
+            self.entry.options.get(
+                CONF_ASSIST_SESSION_ID,
+                DEFAULT_ASSIST_SESSION_ID,
+            )
+        )
+        if configured_session_id:
+            return configured_session_id
+
         if user_input.conversation_id:
             return user_input.conversation_id
 
@@ -205,11 +227,19 @@ class OpenClawConversationAgent(conversation.AbstractConversationAgent):
 
         return "assist_default"
 
+    def _normalize_optional_text(self, value: Any) -> str | None:
+        """Return a stripped string or None for blank values."""
+        if not isinstance(value, str):
+            return None
+        cleaned = value.strip()
+        return cleaned or None
+
     async def _get_response(
         self,
         client: OpenClawApiClient,
         message: str,
         conversation_id: str,
+        agent_id: str | None = None,
         system_prompt: str | None = None,
     ) -> str:
         """Get a response from OpenClaw, trying streaming first."""
@@ -219,6 +249,8 @@ class OpenClawConversationAgent(conversation.AbstractConversationAgent):
             message=message,
             session_id=conversation_id,
             system_prompt=system_prompt,
+            agent_id=agent_id,
+            extra_headers=_VOICE_REQUEST_HEADERS,
         ):
             full_response += chunk
 
@@ -230,6 +262,8 @@ class OpenClawConversationAgent(conversation.AbstractConversationAgent):
             message=message,
             session_id=conversation_id,
             system_prompt=system_prompt,
+            agent_id=agent_id,
+            extra_headers=_VOICE_REQUEST_HEADERS,
         )
         extracted = self._extract_text_recursive(response)
         return extracted or ""

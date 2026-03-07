@@ -24,6 +24,8 @@ CONF_USE_SSL = "use_ssl"
 CONF_VERIFY_SSL = "verify_ssl"
 CONF_ADDON_CONFIG_PATH = "addon_config_path"
 CONF_AGENT_ID = "agent_id"
+CONF_VOICE_AGENT_ID = "voice_agent_id"
+CONF_ASSIST_SESSION_ID = "assist_session_id"
 
 # Options
 CONF_INCLUDE_EXPOSED_CONTEXT = "include_exposed_context"
@@ -38,6 +40,8 @@ CONF_BROWSER_VOICE_LANGUAGE = "browser_voice_language"
 CONF_THINKING_TIMEOUT = "thinking_timeout"
 
 DEFAULT_AGENT_ID = "main"
+DEFAULT_VOICE_AGENT_ID = ""
+DEFAULT_ASSIST_SESSION_ID = ""
 DEFAULT_INCLUDE_EXPOSED_CONTEXT = True
 DEFAULT_CONTEXT_MAX_CHARS = 13000
 DEFAULT_CONTEXT_STRATEGY = "truncate"
@@ -121,6 +125,7 @@ SERVICE_INVOKE_TOOL = "invoke_tool"
 
 # Attributes
 ATTR_MESSAGE = "message"
+ATTR_SOURCE = "source"
 ATTR_SESSION_ID = "session_id"
 ATTR_ATTACHMENTS = "attachments"
 ATTR_MODEL = "model"

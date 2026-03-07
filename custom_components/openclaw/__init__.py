@@ -46,9 +46,11 @@ from .const import (
     ATTR_DRY_RUN,
     ATTR_MESSAGE_CHANNEL,
     ATTR_ACCOUNT_ID,
+    ATTR_SOURCE,
     ATTR_TIMESTAMP,
     CONF_ADDON_CONFIG_PATH,
     CONF_AGENT_ID,
+    CONF_VOICE_AGENT_ID,
     CONF_GATEWAY_HOST,
     CONF_GATEWAY_PORT,
     CONF_GATEWAY_TOKEN,
@@ -66,6 +68,7 @@ from .const import (
     CONF_THINKING_TIMEOUT,
     CONTEXT_STRATEGY_TRUNCATE,
     DEFAULT_AGENT_ID,
+    DEFAULT_VOICE_AGENT_ID,
     DEFAULT_CONTEXT_MAX_CHARS,
     DEFAULT_CONTEXT_STRATEGY,
     DEFAULT_ENABLE_TOOL_CALLS,
@@ -92,13 +95,18 @@ _LOGGER = logging.getLogger(__name__)
 
 _MAX_CHAT_HISTORY = 200
 
+_VOICE_REQUEST_HEADERS = {
+    "x-openclaw-source": "voice",
+    "x-ha-voice": "true",
+}
+
 # Path to the chat card JS inside the integration package (custom_components/openclaw/www/)
 _CARD_FILENAME = "openclaw-chat-card.js"
 _CARD_PATH = Path(__file__).parent / "www" / _CARD_FILENAME
 # URL at which the card JS is served (registered via register_static_path)
 _CARD_STATIC_URL = f"/openclaw/{_CARD_FILENAME}"
 # Versioned URL used for Lovelace resource registration to avoid stale browser cache
-_CARD_URL = f"{_CARD_STATIC_URL}?v=0.1.56"
+_CARD_URL = f"{_CARD_STATIC_URL}?v=0.1.60"
 
 OpenClawConfigEntry = ConfigEntry
 
@@ -107,6 +115,7 @@ OpenClawConfigEntry = ConfigEntry
 SEND_MESSAGE_SCHEMA = vol.Schema(
     {
         vol.Required(ATTR_MESSAGE): cv.string,
+        vol.Optional(ATTR_SOURCE): cv.string,
         vol.Optional(ATTR_SESSION_ID): cv.string,
         vol.Optional(ATTR_ATTACHMENTS): vol.All(cv.ensure_list, [cv.string]),
         vol.Optional(ATTR_AGENT_ID): cv.string,
@@ -390,11 +399,19 @@ async def _async_add_lovelace_resource(hass: HomeAssistant, url: str) -> bool:
 def _async_register_services(hass: HomeAssistant) -> None:
     """Register openclaw.send_message and openclaw.clear_history services."""
 
+    def _normalize_optional_text(value: Any) -> str | None:
+        if not isinstance(value, str):
+            return None
+        cleaned = value.strip()
+        return cleaned or None
+
     async def handle_send_message(call: ServiceCall) -> None:
         """Handle the openclaw.send_message service call."""
         message: str = call.data[ATTR_MESSAGE]
+        source: str | None = call.data.get(ATTR_SOURCE)
         session_id: str = call.data.get(ATTR_SESSION_ID) or "default"
-        call_agent_id: str | None = call.data.get(ATTR_AGENT_ID)
+        call_agent_id = _normalize_optional_text(call.data.get(ATTR_AGENT_ID))
+        extra_headers = _VOICE_REQUEST_HEADERS if source == "voice" else None
 
         entry_data = _get_first_entry_data(hass)
         if not entry_data:
@@ -404,6 +421,12 @@ def _async_register_services(hass: HomeAssistant) -> None:
         client: OpenClawApiClient = entry_data["client"]
         coordinator: OpenClawCoordinator = entry_data["coordinator"]
         options = _get_entry_options(hass, entry_data)
+        voice_agent_id = _normalize_optional_text(
+            options.get(CONF_VOICE_AGENT_ID, DEFAULT_VOICE_AGENT_ID)
+        )
+        resolved_agent_id = call_agent_id
+        if resolved_agent_id is None and source == "voice":
+            resolved_agent_id = voice_agent_id
 
         try:
             include_context = options.get(
@@ -430,7 +453,8 @@ def _async_register_services(hass: HomeAssistant) -> None:
                 message=message,
                 session_id=session_id,
                 system_prompt=system_prompt,
-                agent_id=call_agent_id,
+                agent_id=resolved_agent_id,
+                extra_headers=extra_headers,
             )
 
             if options.get(CONF_ENABLE_TOOL_CALLS, DEFAULT_ENABLE_TOOL_CALLS):
@@ -444,7 +468,8 @@ def _async_register_services(hass: HomeAssistant) -> None:
                         ),
                         session_id=session_id,
                         system_prompt=system_prompt,
-                        agent_id=call_agent_id,
+                        agent_id=resolved_agent_id,
+                        extra_headers=extra_headers,
                     )
 
             assistant_message = _extract_assistant_message(response)

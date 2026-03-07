@@ -2,6 +2,22 @@
 
 All notable changes to the OpenClaw Home Assistant Integration will be documented in this file.
 
+## [0.1.61] - 2026-03-07
+
+### Added
+- Added an optional dedicated `voice_agent_id` integration option so Assist and microphone-originated chat requests can be routed to a separate OpenClaw agent without changing the default text/chat agent.
+- Added an optional `assist_session_id` integration option so the native Home Assistant conversation agent can reuse a fixed OpenClaw session when desired.
+
+### Changed
+- Leaving either of the new options blank preserves the existing behavior: voice requests still use the configured default agent, and Assist still uses the Home Assistant conversation or fallback session ID.
+
+## [0.1.60] - 2026-03-07
+
+### Added
+- Added voice-origin request headers for Home Assistant Assist / voice pipeline traffic: `x-openclaw-source: voice` and `x-ha-voice: true`.
+- Added matching voice-origin support for microphone-triggered messages from the OpenClaw chat card, so card voice input and Assist voice pipeline requests are both marked as spoken interactions.
+- This allows OpenClaw agents and hooks to detect spoken interactions and return TTS-friendly responses without affecting regular typed chat requests.
+
 ## [0.1.59] - 2026-03-07
 
 ### Fixed

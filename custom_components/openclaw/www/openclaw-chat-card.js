@@ -13,7 +13,7 @@
  * + subscribes to openclaw_message_received events.
  */
 
-const CARD_VERSION = "0.3.12";
+const CARD_VERSION = "0.3.13";
 
 // Max time (ms) to show the thinking indicator before falling back to an error (default; overridable via card config `thinking_timeout` in seconds)
 const THINKING_TIMEOUT_MS = 120_000;
@@ -516,7 +516,7 @@ class OpenClawChatCard extends HTMLElement {
     this._persistMessages();
   }
 
-  async _sendMessage(text) {
+  async _sendMessage(text, source = null) {
     if (!text || !text.trim() || !this._hass) return;
 
     await this._subscribeToEvents();
@@ -541,6 +541,7 @@ class OpenClawChatCard extends HTMLElement {
     try {
       await this._hass.callService("openclaw", "send_message", {
         message: message,
+        source: source || undefined,
         session_id: this._config.session_id || undefined,
       });
 
@@ -948,7 +949,7 @@ class OpenClawChatCard extends HTMLElement {
 
       this._voiceStatus = "Sending…";
       this._render();
-      this._sendMessage(transcript);
+      this._sendMessage(transcript, "voice");
     } catch (err) {
       console.error("OpenClaw: Assist STT transcription failed", err);
       this._voiceStatus = "Assist STT transcription failed.";
@@ -1161,13 +1162,13 @@ class OpenClawChatCard extends HTMLElement {
           }
           this._voiceStatus = "Sending…";
           this._render();
-          this._sendMessage(command);
+          this._sendMessage(command, "voice");
           return;
         }
 
         this._voiceStatus = "Sending…";
         this._render();
-        this._sendMessage(text);
+        this._sendMessage(text, "voice");
       }
     };
 
