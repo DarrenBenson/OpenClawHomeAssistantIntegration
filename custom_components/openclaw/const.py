@@ -10,6 +10,7 @@ ADDON_SLUG = "openclaw_assistant_dev"
 ADDON_CONFIGS_ROOT = "/addon_configs"
 ADDON_SLUG_FRAGMENTS = ("openclaw_assistant", "openclaw")
 OPENCLAW_CONFIG_REL_PATH = ".openclaw/openclaw.json"
+ASSIST_SESSION_STORE_KEY = "openclaw_assist_sessions"
 
 # Defaults
 DEFAULT_GATEWAY_HOST = "127.0.0.1"
@@ -110,6 +111,8 @@ DATA_LAST_TOOL_DURATION_MS = "last_tool_duration_ms"
 DATA_LAST_TOOL_INVOKED_AT = "last_tool_invoked_at"
 DATA_LAST_TOOL_ERROR = "last_tool_error"
 DATA_LAST_TOOL_RESULT_PREVIEW = "last_tool_result_preview"
+DATA_ASSIST_SESSIONS = "assist_sessions"
+DATA_ASSIST_SESSION_STORE = "assist_session_store"
 
 # Platforms
 PLATFORMS = ["sensor", "binary_sensor", "conversation", "event", "button", "select"]

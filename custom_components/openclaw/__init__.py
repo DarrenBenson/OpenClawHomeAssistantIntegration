@@ -162,6 +162,7 @@ async def async_setup_entry(hass: HomeAssistant, entry: OpenClawConfigEntry) -> 
         verify_ssl=verify_ssl,
         session=session,
         agent_id=agent_id,
+        debug_logging=entry.options.get(CONF_DEBUG_LOGGING, DEFAULT_DEBUG_LOGGING),
     )
 
     coordinator = OpenClawCoordinator(hass, client)
@@ -880,6 +881,8 @@ def _async_register_websocket_api(hass: HomeAssistant) -> None:
                     CONF_THINKING_TIMEOUT,
                     DEFAULT_THINKING_TIMEOUT,
                 ),
+                CONF_DEBUG_LOGGING: options.get(
+                                                ),
                 "language": hass.config.language,
             },
         )
