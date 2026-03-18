@@ -538,10 +538,6 @@ class OpenClawOptionsFlow(OptionsFlowWithReload):
                 default=selected_provider,
             ): vol.In(["browser", "assist_stt"]),
             vol.Optional(
-                            default=options.get(
-                                                ),
-            ): bool,
-            vol.Optional(
                 CONF_THINKING_TIMEOUT,
                 default=options.get(
                     CONF_THINKING_TIMEOUT,
