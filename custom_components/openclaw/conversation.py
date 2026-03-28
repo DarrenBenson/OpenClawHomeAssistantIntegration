@@ -13,6 +13,7 @@ from typing import Any
 from homeassistant.components import conversation
 from homeassistant.config_entries import ConfigEntry
 from homeassistant.core import HomeAssistant
+from homeassistant.helpers import area_registry as ar, device_registry as dr
 from homeassistant.helpers.entity_platform import AddEntitiesCallback
 from homeassistant.helpers import intent
 
@@ -138,9 +139,25 @@ class OpenClawConversationAgent(conversation.AbstractConversationAgent):
         )
         exposed_context = apply_context_policy(raw_context, max_chars, strategy)
         extra_system_prompt = getattr(user_input, "extra_system_prompt", None)
+
+        # Resolve the originating device's area for room-aware responses
+        device_area_context = self._resolve_device_area(user_input)
+
         system_prompt = "\n\n".join(
-            part for part in (exposed_context, extra_system_prompt) if part
+            part
+            for part in (device_area_context, exposed_context, extra_system_prompt)
+            if part
         ) or None
+
+        # Build voice headers, optionally including area context
+        voice_headers = dict(_VOICE_REQUEST_HEADERS)
+        device_id = getattr(user_input, "device_id", None)
+        if device_id:
+            voice_headers["x-openclaw-device-id"] = device_id
+        if device_area_context:
+            # Extract just the area name from "[Voice command from: Study]"
+            area_name = device_area_context.removeprefix("[Voice command from: ").removesuffix("]")
+            voice_headers["x-openclaw-area"] = area_name
 
         try:
             full_response = await self._get_response(
@@ -149,6 +166,7 @@ class OpenClawConversationAgent(conversation.AbstractConversationAgent):
                 conversation_id,
                 voice_agent_id,
                 system_prompt,
+                voice_headers,
             )
         except OpenClawApiError as err:
             _LOGGER.error("OpenClaw conversation error: %s", err)
@@ -165,6 +183,7 @@ class OpenClawConversationAgent(conversation.AbstractConversationAgent):
                             conversation_id,
                             voice_agent_id,
                             system_prompt,
+                            voice_headers,
                         )
                     except OpenClawApiError as retry_err:
                         return self._error_result(
@@ -227,6 +246,34 @@ class OpenClawConversationAgent(conversation.AbstractConversationAgent):
 
         return "assist_default"
 
+    def _resolve_device_area(
+        self, user_input: conversation.ConversationInput
+    ) -> str | None:
+        """Resolve the area name for the device that initiated the conversation.
+
+        Returns a short context string like '[Voice command from: Study]'
+        so the agent knows which room the user is in.
+        """
+        device_id = getattr(user_input, "device_id", None)
+        if not device_id:
+            return None
+
+        try:
+            dev_reg = dr.async_get(self.hass)
+            device_entry = dev_reg.async_get(device_id)
+            if not device_entry or not device_entry.area_id:
+                return None
+
+            area_reg = ar.async_get(self.hass)
+            area_entry = area_reg.async_get_area(device_entry.area_id)
+            if not area_entry:
+                return None
+
+            return f"[Voice command from: {area_entry.name}]"
+        except Exception:
+            _LOGGER.debug("Could not resolve area for device %s", device_id)
+            return None
+
     def _normalize_optional_text(self, value: Any) -> str | None:
         """Return a stripped string or None for blank values."""
         if not isinstance(value, str):
@@ -241,8 +288,10 @@ class OpenClawConversationAgent(conversation.AbstractConversationAgent):
         conversation_id: str,
         agent_id: str | None = None,
         system_prompt: str | None = None,
+        extra_headers: dict[str, str] | None = None,
     ) -> str:
         """Get a response from OpenClaw, trying streaming first."""
+        headers = extra_headers or _VOICE_REQUEST_HEADERS
         # Try streaming (lower TTFB for voice pipeline)
         full_response = ""
         async for chunk in client.async_stream_message(
@@ -250,7 +299,7 @@ class OpenClawConversationAgent(conversation.AbstractConversationAgent):
             session_id=conversation_id,
             system_prompt=system_prompt,
             agent_id=agent_id,
-            extra_headers=_VOICE_REQUEST_HEADERS,
+            extra_headers=headers,
         ):
             full_response += chunk
 
@@ -263,7 +312,7 @@ class OpenClawConversationAgent(conversation.AbstractConversationAgent):
             session_id=conversation_id,
             system_prompt=system_prompt,
             agent_id=agent_id,
-            extra_headers=_VOICE_REQUEST_HEADERS,
+            extra_headers=headers,
         )
         extracted = self._extract_text_recursive(response)
         return extracted or ""
