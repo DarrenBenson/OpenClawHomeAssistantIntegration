@@ -118,8 +118,21 @@ class OpenClawApiClient:
         return headers
 
     async def _get_session(self) -> aiohttp.ClientSession:
-        """Get or create an aiohttp session."""
-        if self._session is None or self._session.closed:
+        """Get the aiohttp session.
+
+        Prefers the HA-managed session passed in the constructor.
+        Falls back to creating a new session only if none was provided.
+        """
+        if self._session is not None and not self._session.closed:
+            return self._session
+        if self._session is None:
+            # No session was provided at init; create one as last resort
+            _LOGGER.debug("Creating fallback aiohttp session (no HA session provided)")
+            self._session = aiohttp.ClientSession()
+        else:
+            # Session was provided but is now closed; this shouldn't happen
+            # with HA-managed sessions, but handle gracefully
+            _LOGGER.warning("HA-managed aiohttp session was closed unexpectedly, creating replacement")
             self._session = aiohttp.ClientSession()
         return self._session
 

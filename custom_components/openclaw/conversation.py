@@ -20,7 +20,7 @@ from homeassistant.helpers.entity_platform import AddEntitiesCallback
 from homeassistant.helpers.storage import Store
 from homeassistant.helpers import intent
 
-from .api import OpenClawApiClient, OpenClawApiError
+from .api import OpenClawApiClient, OpenClawApiError, OpenClawConnectionError, OpenClawAuthError
 from .const import (
     ATTR_MESSAGE,
     ATTR_MODEL,
@@ -48,6 +48,7 @@ from .const import (
 )
 from .coordinator import OpenClawCoordinator
 from .exposure import apply_context_policy, build_exposed_entities_context
+from .utils import extract_text_recursive, normalize_optional_text
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -135,10 +136,10 @@ class OpenClawConversationAgent(conversation.AbstractConversationAgent):
         message = user_input.text
         assistant_id = "conversation"
         options = self.entry.options
-        voice_agent_id = self._normalize_optional_text(
+        voice_agent_id = normalize_optional_text(
             options.get(CONF_VOICE_AGENT_ID)
         )
-        configured_agent_id = self._normalize_optional_text(
+        configured_agent_id = normalize_optional_text(
             options.get(
                 CONF_AGENT_ID,
                 self.entry.data.get(CONF_AGENT_ID, DEFAULT_AGENT_ID),
@@ -204,6 +205,7 @@ class OpenClawConversationAgent(conversation.AbstractConversationAgent):
             )
         except OpenClawApiError as err:
             _LOGGER.error("OpenClaw conversation error: %s", err)
+            error_code = self._map_error_code(err)
 
             # Try token refresh if we have the capability
             refresh_fn = entry_data.get("refresh_token")
@@ -215,7 +217,7 @@ class OpenClawConversationAgent(conversation.AbstractConversationAgent):
                             client,
                             message,
                             conversation_id,
-                            voice_agent_id,
+                            resolved_agent_id,
                             system_prompt,
                             voice_headers,
                         )
@@ -223,16 +225,19 @@ class OpenClawConversationAgent(conversation.AbstractConversationAgent):
                         return self._error_result(
                             user_input,
                             f"Error communicating with OpenClaw: {retry_err}",
+                            self._map_error_code(retry_err),
                         )
                 else:
                     return self._error_result(
                         user_input,
                         f"Error communicating with OpenClaw: {err}",
+                        error_code,
                     )
             else:
                 return self._error_result(
                     user_input,
                     f"Error communicating with OpenClaw: {err}",
+                    error_code,
                 )
 
         # Fire event so automations can react to the response
@@ -259,7 +264,7 @@ class OpenClawConversationAgent(conversation.AbstractConversationAgent):
 
     def _resolve_conversation_id(self, user_input: conversation.ConversationInput, agent_id: str | None) -> str:
         """Return conversation id from HA or a stable Assist fallback session key."""
-        configured_session_id = self._normalize_optional_text(
+        configured_session_id = normalize_optional_text(
             self.entry.options.get(
                 CONF_ASSIST_SESSION_ID,
                 DEFAULT_ASSIST_SESSION_ID,
@@ -312,13 +317,6 @@ class OpenClawConversationAgent(conversation.AbstractConversationAgent):
             _LOGGER.debug("Could not resolve area for device %s", device_id)
             return None
 
-    def _normalize_optional_text(self, value: Any) -> str | None:
-        """Return a stripped string or None for blank values."""
-        if not isinstance(value, str):
-            return None
-        cleaned = value.strip()
-        return cleaned or None
-
     async def _get_response(
         self,
         client: OpenClawApiClient,
@@ -356,54 +354,8 @@ class OpenClawConversationAgent(conversation.AbstractConversationAgent):
             agent_id=agent_id,
             extra_headers=headers,
         )
-        extracted = self._extract_text_recursive(response)
+        extracted = extract_text_recursive(response)
         return extracted or ""
-
-    def _extract_text_recursive(self, value: Any, depth: int = 0) -> str | None:
-        """Recursively extract assistant text from nested response payloads."""
-        if depth > 8:
-            return None
-
-        if isinstance(value, str):
-            text = value.strip()
-            return text or None
-
-        if isinstance(value, list):
-            parts: list[str] = []
-            for item in value:
-                extracted = self._extract_text_recursive(item, depth + 1)
-                if extracted:
-                    parts.append(extracted)
-            if parts:
-                return "\n".join(parts)
-            return None
-
-        if isinstance(value, dict):
-            priority_keys = (
-                "output_text",
-                "text",
-                "content",
-                "message",
-                "response",
-                "answer",
-                "choices",
-                "output",
-                "delta",
-            )
-
-            for key in priority_keys:
-                if key not in value:
-                    continue
-                extracted = self._extract_text_recursive(value.get(key), depth + 1)
-                if extracted:
-                    return extracted
-
-            for nested_value in value.values():
-                extracted = self._extract_text_recursive(nested_value, depth + 1)
-                if extracted:
-                    return extracted
-
-        return None
 
     @staticmethod
     def _should_continue(response: str) -> bool:
@@ -424,7 +376,7 @@ class OpenClawConversationAgent(conversation.AbstractConversationAgent):
 
         # Check if the response ends with a question mark
         # (allow trailing punctuation like quotes, parens, or emoji)
-        if re.search(r"\?\s*[\"'""»)\]]*\s*$", text):
+        if re.search(r"\?\s*[\"'\u201c\u201d\u00bb)\]]*\s*$", text):
             return True
 
         # Common follow-up patterns (EN + DE)
@@ -452,15 +404,23 @@ class OpenClawConversationAgent(conversation.AbstractConversationAgent):
 
         return False
 
+    @staticmethod
+    def _map_error_code(err: OpenClawApiError) -> intent.IntentResponseErrorCode:
+        """Map OpenClaw exceptions to HA intent error codes."""
+        if isinstance(err, (OpenClawConnectionError, OpenClawAuthError)):
+            return intent.IntentResponseErrorCode.FAILED_TO_HANDLE
+        return intent.IntentResponseErrorCode.UNKNOWN
+
     def _error_result(
         self,
         user_input: conversation.ConversationInput,
         error_message: str,
+        error_code: intent.IntentResponseErrorCode = intent.IntentResponseErrorCode.UNKNOWN,
     ) -> conversation.ConversationResult:
         """Build an error ConversationResult."""
         intent_response = intent.IntentResponse(language=user_input.language)
         intent_response.async_set_error(
-            intent.IntentResponseErrorCode.UNKNOWN,
+            error_code,
             error_message,
         )
         return conversation.ConversationResult(
