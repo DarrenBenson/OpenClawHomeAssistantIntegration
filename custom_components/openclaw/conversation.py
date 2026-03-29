@@ -7,6 +7,7 @@ with Assist, Voice PE, and any HA voice satellite.
 from __future__ import annotations
 
 from datetime import datetime, timezone
+from uuid import uuid4
 import logging
 from typing import Any
 
@@ -15,6 +16,7 @@ from homeassistant.config_entries import ConfigEntry
 from homeassistant.core import HomeAssistant
 from homeassistant.helpers import area_registry as ar, device_registry as dr
 from homeassistant.helpers.entity_platform import AddEntitiesCallback
+from homeassistant.helpers.storage import Store
 from homeassistant.helpers import intent
 
 from .api import OpenClawApiClient, OpenClawApiError
@@ -24,17 +26,22 @@ from .const import (
     ATTR_SESSION_ID,
     ATTR_TIMESTAMP,
     CONF_ASSIST_SESSION_ID,
+    CONF_AGENT_ID,
     CONF_CONTEXT_MAX_CHARS,
     CONF_CONTEXT_STRATEGY,
     CONF_INCLUDE_EXPOSED_CONTEXT,
     CONF_VOICE_AGENT_ID,
     DEFAULT_ASSIST_SESSION_ID,
+    DEFAULT_AGENT_ID,
     DEFAULT_CONTEXT_MAX_CHARS,
     DEFAULT_CONTEXT_STRATEGY,
     DEFAULT_INCLUDE_EXPOSED_CONTEXT,
     DATA_MODEL,
     DOMAIN,
     EVENT_MESSAGE_RECEIVED,
+    DATA_ASSIST_SESSIONS,
+    DATA_ASSIST_SESSION_STORE,
+    ASSIST_SESSION_STORE_KEY,
 )
 from .coordinator import OpenClawCoordinator
 from .exposure import apply_context_policy, build_exposed_entities_context
@@ -53,6 +60,13 @@ async def async_setup_entry(
     async_add_entities: AddEntitiesCallback,
 ) -> None:
     """Set up the OpenClaw conversation agent."""
+    # Load persisted assist sessions
+    store = Store(hass, 1, ASSIST_SESSION_STORE_KEY)
+    stored = await store.async_load() or {}
+    hass.data.setdefault(DOMAIN, {})
+    hass.data[DOMAIN][DATA_ASSIST_SESSIONS] = stored
+    hass.data[DOMAIN][DATA_ASSIST_SESSION_STORE] = store
+
     agent = OpenClawConversationAgent(hass, entry)
     conversation.async_set_agent(hass, entry, agent)
 
@@ -116,12 +130,19 @@ class OpenClawConversationAgent(conversation.AbstractConversationAgent):
         coordinator: OpenClawCoordinator = entry_data["coordinator"]
 
         message = user_input.text
-        conversation_id = self._resolve_conversation_id(user_input)
         assistant_id = "conversation"
         options = self.entry.options
         voice_agent_id = self._normalize_optional_text(
             options.get(CONF_VOICE_AGENT_ID)
         )
+        configured_agent_id = self._normalize_optional_text(
+            options.get(
+                CONF_AGENT_ID,
+                self.entry.data.get(CONF_AGENT_ID, DEFAULT_AGENT_ID),
+            )
+        )
+        resolved_agent_id = voice_agent_id or configured_agent_id
+        conversation_id = self._resolve_conversation_id(user_input, resolved_agent_id)
         include_context = options.get(
             CONF_INCLUDE_EXPOSED_CONTEXT,
             DEFAULT_INCLUDE_EXPOSED_CONTEXT,
@@ -166,7 +187,7 @@ class OpenClawConversationAgent(conversation.AbstractConversationAgent):
                 client,
                 message,
                 conversation_id,
-                voice_agent_id,
+                resolved_agent_id,
                 system_prompt,
                 voice_headers,
             )
@@ -218,12 +239,13 @@ class OpenClawConversationAgent(conversation.AbstractConversationAgent):
         intent_response = intent.IntentResponse(language=user_input.language)
         intent_response.async_set_speech(full_response)
 
+
         return conversation.ConversationResult(
             response=intent_response,
             conversation_id=conversation_id,
         )
 
-    def _resolve_conversation_id(self, user_input: conversation.ConversationInput) -> str:
+    def _resolve_conversation_id(self, user_input: conversation.ConversationInput, agent_id: str | None) -> str:
         """Return conversation id from HA or a stable Assist fallback session key."""
         configured_session_id = self._normalize_optional_text(
             self.entry.options.get(
@@ -234,19 +256,21 @@ class OpenClawConversationAgent(conversation.AbstractConversationAgent):
         if configured_session_id:
             return configured_session_id
 
-        if user_input.conversation_id:
-            return user_input.conversation_id
+        domain_store = self.hass.data.setdefault(DOMAIN, {})
+        session_cache = domain_store.setdefault(DATA_ASSIST_SESSIONS, {})
+        cache_key = agent_id or "main"
+        cached_session = session_cache.get(cache_key)
+        if cached_session:
+            return cached_session
 
-        context = getattr(user_input, "context", None)
-        user_id = getattr(context, "user_id", None)
-        if user_id:
-            return f"assist_user_{user_id}"
+        new_session = f"agent:{cache_key}:assist_{uuid4().hex[:12]}"
+        session_cache[cache_key] = new_session
 
-        device_id = getattr(user_input, "device_id", None)
-        if device_id:
-            return f"assist_device_{device_id}"
+        store = domain_store.get(DATA_ASSIST_SESSION_STORE)
+        if store:
+            self.hass.async_create_task(store.async_save(session_cache))
 
-        return "assist_default"
+        return new_session
 
     def _resolve_device_area(
         self, user_input: conversation.ConversationInput
@@ -294,11 +318,14 @@ class OpenClawConversationAgent(conversation.AbstractConversationAgent):
     ) -> str:
         """Get a response from OpenClaw, trying streaming first."""
         headers = extra_headers or _VOICE_REQUEST_HEADERS
+        model_override = f"openclaw:{agent_id}" if agent_id else None
+
         # Try streaming (lower TTFB for voice pipeline)
         full_response = ""
         async for chunk in client.async_stream_message(
             message=message,
             session_id=conversation_id,
+            model=model_override,
             system_prompt=system_prompt,
             agent_id=agent_id,
             extra_headers=headers,
@@ -312,6 +339,7 @@ class OpenClawConversationAgent(conversation.AbstractConversationAgent):
         response = await client.async_send_message(
             message=message,
             session_id=conversation_id,
+            model=model_override,
             system_prompt=system_prompt,
             agent_id=agent_id,
             extra_headers=headers,
