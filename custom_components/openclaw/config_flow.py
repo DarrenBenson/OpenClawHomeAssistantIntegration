@@ -37,7 +37,6 @@ from .const import (
     ADDON_SLUG_FRAGMENTS,
     CONF_ADDON_CONFIG_PATH,
     CONF_AGENT_ID,
-    CONF_ASSIST_SESSION_ID,
     CONF_GATEWAY_HOST,
     CONF_GATEWAY_PORT,
     CONF_GATEWAY_TOKEN,
@@ -59,7 +58,6 @@ from .const import (
     CONTEXT_STRATEGY_CLEAR,
     CONTEXT_STRATEGY_TRUNCATE,
     DEFAULT_AGENT_ID,
-    DEFAULT_ASSIST_SESSION_ID,
     DEFAULT_GATEWAY_HOST,
     DEFAULT_GATEWAY_PORT,
     DEFAULT_CONTEXT_MAX_CHARS,
@@ -479,13 +477,6 @@ class OpenClawOptionsFlow(OptionsFlowWithReload):
                 default=options.get(
                     CONF_VOICE_AGENT_ID,
                     DEFAULT_VOICE_AGENT_ID,
-                ),
-            ): str,
-            vol.Optional(
-                CONF_ASSIST_SESSION_ID,
-                default=options.get(
-                    CONF_ASSIST_SESSION_ID,
-                    DEFAULT_ASSIST_SESSION_ID,
                 ),
             ): str,
             vol.Optional(

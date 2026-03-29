@@ -26,14 +26,12 @@ from .const import (
     ATTR_MODEL,
     ATTR_SESSION_ID,
     ATTR_TIMESTAMP,
-    CONF_ASSIST_SESSION_ID,
     CONF_AGENT_ID,
     CONF_CONTEXT_MAX_CHARS,
     CONF_CONTEXT_STRATEGY,
     CONF_DEBUG_LOGGING,
     CONF_INCLUDE_EXPOSED_CONTEXT,
     CONF_VOICE_AGENT_ID,
-    DEFAULT_ASSIST_SESSION_ID,
     DEFAULT_AGENT_ID,
     DEFAULT_CONTEXT_MAX_CHARS,
     DEFAULT_CONTEXT_STRATEGY,
@@ -263,16 +261,7 @@ class OpenClawConversationAgent(conversation.AbstractConversationAgent):
         )
 
     def _resolve_conversation_id(self, user_input: conversation.ConversationInput, agent_id: str | None) -> str:
-        """Return conversation id from HA or a stable Assist fallback session key."""
-        configured_session_id = normalize_optional_text(
-            self.entry.options.get(
-                CONF_ASSIST_SESSION_ID,
-                DEFAULT_ASSIST_SESSION_ID,
-            )
-        )
-        if configured_session_id:
-            return configured_session_id
-
+        """Return a stable, agent-scoped session key persisted across HA restarts."""
         domain_store = self.hass.data.setdefault(DOMAIN, {})
         session_cache = domain_store.setdefault(DATA_ASSIST_SESSIONS, {})
         cache_key = agent_id or "main"
