@@ -424,8 +424,6 @@ class OpenClawApiClient:
         session = await self._get_session()
         url = f"{self._base_url}{API_CHAT_COMPLETIONS}"
 
-        self._log_request("chat", agent_id, payload.get("model"), session_id, headers)
-
         try:
             async with session.post(
                 url,
