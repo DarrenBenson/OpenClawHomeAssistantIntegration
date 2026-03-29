@@ -149,14 +149,15 @@ class OpenClawConversationAgent(conversation.AbstractConversationAgent):
             if part
         ) or None
 
-        # Only add area headers when we actually resolved a room
-        if device_area_context:
-            area_name = device_area_context.removeprefix("[Voice command from: ").removesuffix("]")
-            voice_headers = {
-                **_VOICE_REQUEST_HEADERS,
-                "x-openclaw-area": area_name,
-                "x-openclaw-device-id": getattr(user_input, "device_id", "") or "",
-            }
+        # Add device/area headers when available
+        device_id = getattr(user_input, "device_id", None)
+        if device_id or device_area_context:
+            voice_headers = dict(_VOICE_REQUEST_HEADERS)
+            if device_id:
+                voice_headers["x-openclaw-device-id"] = device_id
+            if device_area_context:
+                area_name = device_area_context.removeprefix("[Voice command from: ").removesuffix("]")
+                voice_headers["x-openclaw-area"] = area_name
         else:
             voice_headers = None
 
