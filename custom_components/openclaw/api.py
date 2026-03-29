@@ -23,6 +23,10 @@ API_TIMEOUT = aiohttp.ClientTimeout(total=10)
 # Timeout for streaming chat completions (long-running)
 STREAM_TIMEOUT = aiohttp.ClientTimeout(total=300, sock_read=120)
 
+# Retry config for transient connection failures
+_MAX_RETRIES = 2
+_RETRY_DELAY = 1.0  # seconds
+
 
 class OpenClawApiError(Exception):
     """Base exception for OpenClaw API errors."""
@@ -289,6 +293,21 @@ class OpenClawApiClient:
             raise OpenClawConnectionError(
                 f"Cannot connect to OpenClaw gateway: {err}"
             ) from err
+
+    async def async_send_message_with_retry(self, **kwargs: Any) -> dict[str, Any]:
+        """Send a message with automatic retry on transient connection failures."""
+        last_err: Exception | None = None
+        for attempt in range(_MAX_RETRIES + 1):
+            try:
+                return await self.async_send_message(**kwargs)
+            except OpenClawConnectionError as err:
+                last_err = err
+                if attempt < _MAX_RETRIES:
+                    _LOGGER.debug("Connection failed (attempt %d/%d), retrying in %ss", attempt + 1, _MAX_RETRIES + 1, _RETRY_DELAY)
+                    await asyncio.sleep(_RETRY_DELAY)
+            except OpenClawAuthError:
+                raise  # Don't retry auth errors
+        raise last_err  # type: ignore[misc]
 
     async def async_stream_message(
         self,

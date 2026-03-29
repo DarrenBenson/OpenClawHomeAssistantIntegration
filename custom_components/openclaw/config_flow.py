@@ -84,7 +84,9 @@ _LOGGER = logging.getLogger(__name__)
 # ── Filesystem helpers ────────────────────────────────────────────────────────
 
 def _find_addon_config_dir() -> Path | None:
-    """Scan /addon_configs/ for the OpenClaw addon directory.
+    """Scan /addon_configs/ for the OpenClaw addon directory (blocking I/O).
+
+    Must be called via hass.async_add_executor_job() from async code.
 
     The Supervisor prepends a repository-specific hash to the addon slug:
         /addon_configs/<hash>_<addon_name>/
